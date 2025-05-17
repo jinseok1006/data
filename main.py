@@ -37,8 +37,21 @@ async def get_page_count(session, params):
         html = await response.text()
         soup = BeautifulSoup(html, 'html.parser')
         
-        # 검색 결과 수에서 페이지 수 계산
-        count_text = soup.select_one('strong')
+        # 방법 1: '마지막 페이지' 버튼에서 직접 페이지 번호 추출
+        last_page_button = soup.select_one('nav.pagination a.control.last')
+        if last_page_button:
+            onclick_attr = last_page_button.get('onclick', '')
+            page_match = re.search(r'updatePage\((\d+)\)', onclick_attr)
+            if page_match:
+                max_page = int(page_match.group(1))
+                logging.info(f"마지막 페이지 버튼에서 총 페이지 수 확인: {max_page}")
+                return max_page
+        
+        # 방법 2: 검색 결과 수에서 페이지 수 계산
+        count_text = soup.select_one('.result-count strong')
+        if not count_text:
+            count_text = soup.select_one('strong')  # 다른 위치의 strong 태그 확인
+        
         if count_text:
             count_text = count_text.text
             count_match = re.search(r'총\s*([0-9,]+)\s*건', count_text)
@@ -46,20 +59,23 @@ async def get_page_count(session, params):
                 total_count = int(count_match.group(1).replace(',', ''))
                 per_page = int(params.get('perPage', 10))
                 max_page = (total_count + per_page - 1) // per_page  # 올림 나눗셈
-                logging.info(f"검색 결과 총 {total_count}건, 페이지당 {per_page}개, 페이지 수: {max_page}")
+                logging.info(f"검색 결과 총 {total_count}건, 페이지당 {per_page}개, 총 페이지 수: {max_page}")
                 return max_page
         
-        # 페이지네이션에서 숫자 찾기
+        # 방법 3: 페이지네이션에서 숫자 찾기
         pagination = soup.select('nav.pagination a')
         max_page = 1
+        
         for page_link in pagination:
-            try:
-                # 페이지 번호를 추출
-                page_num = int(page_link.get_text().strip())
-                if page_num > max_page:
-                    max_page = page_num
-            except (ValueError, TypeError):
-                continue
+            onclick_attr = page_link.get('onclick', '')
+            page_match = re.search(r'updatePage\((\d+)\)', onclick_attr)
+            if page_match:
+                try:
+                    page_num = int(page_match.group(1))
+                    if page_num > max_page:
+                        max_page = page_num
+                except (ValueError, TypeError):
+                    continue
         
         logging.info(f"페이지네이션에서 찾은 최대 페이지 번호: {max_page}")
         return max_page
