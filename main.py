@@ -504,7 +504,7 @@ def parse_arguments():
                         help='처리할 최대 페이지 수 (기본값: 1, 0 입력 시 모든 페이지 탐색)')
     
     parser.add_argument('-n', '--num-downloads', type=int, default=2,
-                        help='다운로드할 최대 항목 수 (기본값: 2)')
+                        help='다운로드할 최대 항목 수 (기본값: 2, 0 입력 시 모든 항목 다운로드)')
     
     parser.add_argument('-f', '--formats', nargs='+',
                         help='필터링할 파일 형식 (예: CSV JSON)')
@@ -517,9 +517,6 @@ def parse_arguments():
     
     parser.add_argument('-d', '--download-dir', default=DOWNLOAD_DIR,
                         help=f'다운로드 디렉토리 (기본값: {DOWNLOAD_DIR})')
-    
-    parser.add_argument('--save-json', action='store_true',
-                        help='수집된 모든 메타데이터를 JSON 파일로 저장')
     
     parser.add_argument('--json-file', default='data_titles.json',
                         help='JSON 데이터 파일 경로 (다운로드 모드에서 사용)')
@@ -583,7 +580,7 @@ async def collect_data(session, args):
         logging.warning("필터링 후 남은 항목이 없습니다.")
         return []
     
-    # JSON으로 모든 메타데이터 저장
+    # 항상 JSON 파일로 메타데이터 저장 (다운로드 모드에서 사용)
     json_file = "data_titles.json"
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(filtered_items, f, ensure_ascii=False, indent=2)
@@ -607,8 +604,14 @@ async def download_items(session, items, args):
             else:
                 logging.warning(f"인덱스 {idx}는 유효하지 않습니다. 무시합니다.")
     else:
-        # 인덱스가 제공되지 않은 경우 앞에서부터 지정된 개수만큼 선택
-        download_items = items[:min(len(items), args.num_downloads)]
+        # 인덱스가 제공되지 않은 경우
+        if args.num_downloads == 0:
+            # num_downloads가 0이면 모든 항목 다운로드
+            download_items = items
+            logging.info(f"모든 항목({len(items)}개)을 다운로드합니다.")
+        else:
+            # 지정된 개수만큼 선택
+            download_items = items[:min(len(items), args.num_downloads)]
     
     if not download_items:
         logging.warning("다운로드할 항목이 없습니다.")
