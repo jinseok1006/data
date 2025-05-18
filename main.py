@@ -542,56 +542,56 @@ async def record_failed_download(title, reason):
     with open(FAILED_LIST_FILE, 'a', encoding='utf-8') as f:
         f.write(f"{title}: {reason}\n")
 
-# 필터링 함수 - 특정 조건에 맞는 데이터만 선택
+# 필터링 함수
 def filter_data_items(items, keywords=None, formats=None, providers=None):
-    """데이터 항목을 필터링하는 함수"""
+    """데이터 항목들을 필터링하는 함수"""
     filtered_items = []
     
-    # 제목에서 검색할 키워드들 (이 키워드 중 하나라도 포함되어야 함)
-    title_keywords = ['전북', '전라북도', '전북특별자치도']
+    # 제외할 포맷 설정 (SHP 및 이미지 파일)
+    exclude_formats = ['SHP', 'JPG', 'JPEG', 'PNG', 'GIF', 'BMP', 'TIFF']
     
     for item in items:
-        # 제목 필터링 - 제목에 주요 키워드('전북', '전라북도', '전북특별자치도')가 포함되어 있는지 확인
-        if 'title' in item:
-            item_title = item['title'].lower()
-            item_full_title = item.get('full_title', '').lower()
+        # 기본 포함 여부 설정
+        include_item = True
+        
+        # SHP 또는 이미지 포맷인 경우 제외
+        if item.get('file_ext', '').upper() in exclude_formats or \
+           any(fmt.upper() in item.get('title', '').upper() for fmt in exclude_formats) or \
+           any(fmt.upper() in item.get('full_title', '').upper() for fmt in exclude_formats) or \
+           item.get('title_format', '').upper() in exclude_formats or \
+           (item.get('media_type') and item.get('media_type') in ['이미지', '사진', '지도']):
+            logging.info(f"제외 포맷 발견: {item.get('title', '')} (포맷: {item.get('file_ext', '')}, 미디어타입: {item.get('media_type', '없음')})")
+            include_item = False
+        
+        # 공간정보 관련 키워드 체크
+        spatial_keywords = ['공간정보', '지도', '맵', 'GIS', '위치정보', '좌표', '팜맵']
+        if any(keyword in item.get('title', '') for keyword in spatial_keywords) or \
+           any(keyword in item.get('full_title', '') for keyword in spatial_keywords):
+            logging.info(f"공간정보 관련 데이터 제외: {item.get('title', '')}")
+            include_item = False
+        
+        # 키워드 필터링
+        if keywords and include_item:
+            if not any(kw.lower() in ' '.join(item.get('keywords', [])).lower() for kw in keywords):
+                include_item = False
+        
+        # 포맷 필터링
+        if formats and include_item:
+            if item.get('file_ext') and item.get('file_ext').upper() not in [fmt.upper() for fmt in formats]:
+                include_item = False
+        
+        # 제공기관 필터링
+        if providers and include_item:
+            if not any(provider.lower() in (item.get('provider') or '').lower() for provider in providers):
+                include_item = False
+        
+        # 다운로드 버튼 없는 항목 표시
+        if include_item:
+            if 'has_download_btn' in item and not item['has_download_btn']:
+                item['_note'] = "다운로드 버튼 없음"
+                logging.debug(f"다운로드 버튼 없음: '{item['title']}' - 다운로드 불가능")
             
-            # 제목이나 전체 제목에 키워드가 포함되어 있는지 확인
-            if not any(kw.lower() in item_title for kw in title_keywords) and \
-               not any(kw.lower() in item_full_title for kw in title_keywords):
-                logging.debug(f"제목 필터링: '{item['title']}' - 키워드를 포함하지 않아 제외")
-                continue
-        else:
-            # 제목 정보가 없는 항목은 제외
-            continue
-        
-        # 키워드 필터링 (주어진 경우)
-        if keywords and 'keywords' in item and item['keywords']:
-            item_keywords = ' '.join(item['keywords']).lower()
-            if not any(kw.lower() in item_keywords for kw in keywords):
-                logging.debug(f"키워드 필터링: '{item['title']}' - 지정된 키워드를 포함하지 않아 제외")
-                continue
-        
-        # 형식 필터링 (주어진 경우)
-        if formats and 'format_types' in item and item['format_types']:
-            item_formats = [f.upper() for f in item['format_types']]
-            if not any(fmt.upper() in item_formats for fmt in formats):
-                logging.debug(f"형식 필터링: '{item['title']}' - 지정된 형식이 아니라 제외")
-                continue
-        
-        # 제공기관 필터링 (주어진 경우)
-        if providers and 'provider' in item and item['provider']:
-            provider = item['provider'].lower()
-            if not any(prov.lower() in provider for prov in providers):
-                logging.debug(f"제공기관 필터링: '{item['title']}' - 지정된 제공기관이 아니라 제외")
-                continue
-        
-        # 다운로드 버튼 확인 (다운로드 버튼이 없는 항목은 명시적으로 표시)
-        if 'has_download_btn' in item and not item['has_download_btn']:
-            item['_note'] = "다운로드 버튼 없음"
-            logging.debug(f"다운로드 버튼 없음: '{item['title']}' - 다운로드 불가능")
-        
-        filtered_items.append(item)
+            filtered_items.append(item)
     
     return filtered_items
 
