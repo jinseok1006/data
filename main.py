@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse, parse_qs, quote_plus
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
 
 # 진행률 표시용 변수 및 함수
 PROGRESS_BAR_WIDTH = 50  # 진행률 바 너비
@@ -24,13 +25,13 @@ def print_progress(current, total, title='', success=None):
     
     status = ""
     if success is not None:
-        status = "✓ 성공" if success else "✗ 실패"
+        status = "✓" if success else "✗"
     
     if title:
         title_display = f" - {title}"
         # 타이틀이 너무 길면 자르기
-        if len(title_display) > 30:
-            title_display = title_display[:27] + "..."
+        if len(title_display) > 40:
+            title_display = title_display[:37] + "..."
     else:
         title_display = ""
     
@@ -120,7 +121,7 @@ def parse_data_item(item):
         # 제목 텍스트 추출
         full_title = title_element.get_text(strip=True)
         
-        # 페이지네이션에서 보이는 포맷 태그 추출 - 이 부분이 중요합니다!
+        # 페이지네이션에서 보이는 포맷 태그 추출
         format_tag = None
         format_tag_elem = title_element.select_one('span.data-format')
         if format_tag_elem:
@@ -130,11 +131,24 @@ def parse_data_item(item):
         if format_tag:
             logging.debug(f"페이지네이션에서 발견한 형식 태그: {format_tag}")
         
-        # 제목에서 파일 형식 제거 후 제목 정리
+        # 제목 처리 전에 먼저 제목에서 형식 힌트 추출 (제목에 형식이 앞에 붙어있는 경우 처리)
+        title_format = None
+        format_types = ['CSV', 'JSON', 'XML', 'XLSX', 'XLS', 'PDF', 'HWP', 'JPG', 'PNG', 'ZIP', 'SHP']
+        
+        # 1. 제목 앞에 형식이 붙어있는 경우 확인 (예: "JPG전북특별자치도 전주시_음식점 사진")
+        for fmt in format_types:
+            if full_title.startswith(fmt):
+                title_format = fmt
+                # 제목에서 형식 제거
+                full_title = full_title[len(fmt):].strip()
+                break
+        
+        # 2. 제목 중간에 형식이 있는 경우도 확인
         title_text = full_title
-        format_types = ['CSV', 'JSON', 'XML', 'XLSX', 'XLS', 'PDF', 'HWP', 'JPG', 'ZIP']
         for fmt in format_types:
             if fmt in title_text:
+                if not title_format:  # 앞에서 이미 형식을 찾지 않았을 경우에만
+                    title_format = fmt
                 title_text = title_text.replace(fmt, '')
         
         # 제목 정리 - 특수문자 및 불필요한 공백 제거
@@ -157,10 +171,13 @@ def parse_data_item(item):
         
         # 파일 형식 추출
         format_spans = item.select('dl dt a span.data-format, dl dt span.data-format')
-        format_types = [span.get_text(strip=True) for span in format_spans if span.get_text(strip=True)]
+        format_types_from_spans = [span.get_text(strip=True) for span in format_spans if span.get_text(strip=True)]
         
-        # 기본 파일 형식 설정 (페이지 형식 태그 > 데이터 형식 정보 > 기본값)
-        file_ext = 'csv'  # 기본값
+        # 매체유형 추출 - 페이지네이션에서 직접 추출
+        media_type_elem = item.select_one('p:contains("매체유형") > span')
+        media_type = media_type_elem.get_text(strip=True) if media_type_elem else None
+        
+        # 기본 파일 형식 설정을 위한 매핑
         ext_map = {
             'CSV': 'csv', 
             'XLSX': 'xlsx', 
@@ -172,33 +189,65 @@ def parse_data_item(item):
             'PNG': 'png',
             'GIF': 'gif',
             'ZIP': 'zip',
-            'PDF': 'pdf'
+            'PDF': 'pdf',
+            'SHP': 'zip'  # SHP 파일은 보통 ZIP으로 압축되어 제공됨
         }
         
         # 파일 형식 결정 로직 (우선순위) - 명확한 확장자만 사용
-        # 1. 페이지네이션에서 보이는 포맷 태그
+        file_ext = 'csv'  # 기본값
+        
+        # 1. 매체유형 기반 파일 형식 힌트 (이미지/사진인 경우 jpg로 가정)
+        if media_type in ['이미지', '사진']:
+            file_ext = 'jpg'  # 이미지/사진인 경우 기본값을 jpg로 설정
+        
+        # 2. 포맷 태그 기반
         if format_tag and format_tag.upper() in ext_map:
             file_ext = ext_map[format_tag.upper()]
-        # 2. 데이터 형식 정보
-        elif format_types:
-            for fmt in format_types:
+            logging.debug(f"포맷 태그에서 형식 확인: {format_tag} -> {file_ext}")
+        
+        # 3. 제목에서 추출한 형식
+        elif title_format and title_format.upper() in ext_map:
+            file_ext = ext_map[title_format.upper()]
+            logging.debug(f"제목에서 추출한 형식 사용: {title_format} -> {file_ext}")
+        
+        # 4. 형식 스팬에서 추출
+        elif format_types_from_spans:
+            for fmt in format_types_from_spans:
                 if fmt.upper() in ext_map:
                     file_ext = ext_map[fmt.upper()]
+                    logging.debug(f"형식 스팬에서 형식 확인: {fmt} -> {file_ext}")
                     break
         
-        # 매체유형 추출 - 페이지네이션에서 직접 추출
-        media_type_elem = item.select_one('p:contains("매체유형") > span')
-        media_type = media_type_elem.get_text(strip=True) if media_type_elem else None
+        # 다운로드 버튼 찾기 (더 정확한 체크)
+        has_download_btn = False
+        
+        # 1. 직접적인 다운로드 버튼 확인
+        download_btn = item.select_one('a:contains("다운로드"), a.download-btn, a.btn-download, a[onclick*="download"]')
+        if download_btn:
+            has_download_btn = True
+        
+        # 2. 다운로드 텍스트가 있는지 확인 (더 정확한 검사)
+        if not has_download_btn:
+            # 화면에 "다운로드" 텍스트만 있는 것으론 충분하지 않고, 실제 클릭 가능한 요소여야 함
+            download_links = [elem for elem in item.select('a, button') 
+                           if '다운로드' in elem.get_text(strip=True)]
+            has_download_btn = len(download_links) > 0
+        
+        # 3. 추가 확인: 형식 태그나 포맷 정보가 있으면 다운로드 가능할 확률이 높음
+        if not has_download_btn and (format_tag or format_types_from_spans):
+            # 하지만 여전히 조심스럽게 접근
+            logging.debug(f"다운로드 버튼은 찾지 못했지만, 형식 정보가 있어 다운로드 가능성 있음: {title_text}")
+            has_download_btn = True
         
         # 카테고리 정보 추출
         category_elem = item.select_one('p > span:first-child')
         category = category_elem.get_text(strip=True) if category_elem else None
         
-        # 제공기관 정보 추출 - 페이지네이션에서 직접 추출
+        # 제공기관 정보 추출
         provider_elem = item.select_one('p:contains("제공기관") > span')
         provider = provider_elem.get_text(strip=True) if provider_elem else None
         
-        # 키워드 정보 추출 - 페이지네이션에서 직접 추출
+        # 키워드 정보 추출
         keywords_elem = item.select_one('p:contains("키워드")')
         keywords = []
         if keywords_elem:
@@ -226,16 +275,6 @@ def parse_data_item(item):
         download_count_elem = item.select_one('p:contains("다운로드") > span')
         download_count = download_count_elem.get_text(strip=True) if download_count_elem else None
         
-        # 다운로드 버튼 찾기 - 여러 가능한 선택자 검사
-        download_btn = item.select_one('a:contains("다운로드"), a.download-btn, a.btn-download, a[onclick*="download"]')
-        has_download_btn = bool(download_btn)
-        
-        # 다운로드 버튼이 없는 경우 추가 확인
-        if not has_download_btn:
-            # 화면에 표시되는 "다운로드" 텍스트가 있는지 확인
-            text_elements = [elem for elem in item.select('*') if '다운로드' in elem.get_text(strip=True)]
-            has_download_btn = len(text_elements) > 0
-        
         # 데이터 항목 정보 수집
         data_item = {
             'title': title_text,
@@ -243,9 +282,10 @@ def parse_data_item(item):
             'detail_url': detail_url,
             'data_id': data_id,
             'file_ext': file_ext,
-            'format_types': format_types,
-            'format_tag': format_tag,  # 페이지네이션에서 직접 추출한 포맷 태그
-            'media_type': media_type,  # 매체유형 정보 추가
+            'format_types': format_types_from_spans,
+            'format_tag': format_tag,
+            'title_format': title_format,
+            'media_type': media_type,
             'category': category,
             'provider': provider,
             'keywords': keywords,
@@ -287,123 +327,6 @@ async def extract_page_data(session, page_num, params):
                 data_items.append(data_item)
         
         return data_items
-
-# 데이터 상세 정보 추출
-async def get_data_detail(session, data_item):
-    """데이터 항목의 상세 정보를 가져오는 함수"""
-    detail_url = data_item.get('detail_url')
-    if not detail_url:
-        return data_item
-    
-    try:
-        async with session.get(detail_url) as response:
-            if response.status != 200:
-                logging.error(f"상세 페이지 접속 실패: HTTP {response.status}")
-                return data_item
-            
-            html = await response.text()
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # 메타데이터 테이블에서 정보 추출
-            meta_table = soup.select_one('table.file-meta-table')
-            if meta_table:
-                # 키워드 추출
-                keywords_elem = meta_table.select_one('th:contains("키워드") + td')
-                if keywords_elem:
-                    data_item['keywords'] = [kw.strip() for kw in keywords_elem.get_text(strip=True).split(',')]
-                
-                # 업데이트 주기 추출
-                update_cycle_elem = meta_table.select_one('th:contains("업데이트 주기") + td')
-                if update_cycle_elem:
-                    data_item['update_cycle'] = update_cycle_elem.get_text(strip=True)
-                
-                # 제공기관 추출 (상세 페이지에서 더 정확한 정보)
-                provider_elem = meta_table.select_one('th:contains("제공기관") + td')
-                if provider_elem:
-                    data_item['provider'] = provider_elem.get_text(strip=True)
-                
-                # 확장자 정보 추출 - 중요!
-                extension_elem = meta_table.select_one('th:contains("확장자") + td')
-                if extension_elem:
-                    ext = extension_elem.get_text(strip=True)
-                    if ext:
-                        ext_map = {
-                            'CSV': 'csv', 
-                            'XLSX': 'xlsx', 
-                            'XLS': 'xls',
-                            'JSON': 'json', 
-                            'XML': 'xml', 
-                            'HWP': 'hwp',
-                            'JPG': 'jpg', 
-                            'PNG': 'png',
-                            'GIF': 'gif',
-                            'ZIP': 'zip',
-                            'PDF': 'pdf'
-                        }
-                        ext_upper = ext.upper()
-                        if ext_upper in ext_map:
-                            data_item['file_ext'] = ext_map[ext_upper]
-                        else:
-                            data_item['file_ext'] = ext.lower()
-                
-                # 매체유형 정보 추출 (이미지, 텍스트 등)
-                media_type_elem = meta_table.select_one('th:contains("매체유형") + td')
-                if media_type_elem:
-                    media_type = media_type_elem.get_text(strip=True)
-                    # 매체 유형이 이미지이면서 확장자가 없거나 csv인 경우 JPG로 설정
-                    if media_type in ['이미지', '사진'] and data_item['file_ext'] == 'csv':
-                        data_item['file_ext'] = 'jpg'
-            
-            # 미리보기 테이블의 첫 행에서 컬럼 정보 추출
-            preview_table = soup.select_one('div.data-meta-preview table')
-            if preview_table:
-                header_cells = preview_table.select('thead th')
-                if header_cells:
-                    data_item['columns'] = [cell.get_text(strip=True) for cell in header_cells]
-    
-    except Exception as e:
-        logging.error(f"상세 정보 추출 오류: {e} - {detail_url}")
-    
-    return data_item
-
-# 파일 ID 가져오기
-async def get_file_id(session, data_id, detail_url):
-    """파일 ID를 가져오는 함수"""
-    file_info_url = f"https://www.data.go.kr/tcs/dss/selectFileDataDownload.do?publicDataPk={data_id}&fileDetailSn=1"
-    logging.info(f"파일 정보 URL: {file_info_url}")
-    
-    try:
-        async with session.get(file_info_url, headers={
-            "Referer": detail_url,
-            "Accept": "application/json"
-        }) as info_response:
-            html_content = await info_response.text()
-            json_data = None
-            
-            try:
-                json_data = json.loads(html_content)
-            except json.JSONDecodeError:
-                logging.warning("JSON 파싱 실패")
-            
-            # 응답에서 atchFileId 추출
-            atch_file_id = None
-            if json_data:
-                if 'fileDataRegistVO' in json_data and json_data['fileDataRegistVO']:
-                    atch_file_id = json_data['fileDataRegistVO'].get('atchFileId')
-                elif 'atchFileId' in json_data:
-                    atch_file_id = json_data['atchFileId']
-            
-            if not atch_file_id:
-                # 기본값 사용
-                atch_file_id = f"FILE_000000000{data_id}"[-20:]
-                logging.warning(f"파일 ID를 찾을 수 없어 기본값 사용: {atch_file_id}")
-            else:
-                logging.info(f"파일 ID: {atch_file_id}")
-            
-            return atch_file_id
-    except Exception as e:
-        logging.error(f"파일 ID 가져오기 오류: {str(e)}")
-        return f"FILE_000000000{data_id}"[-20:]
 
 # 실제 파일 다운로드
 async def download_file(session, download_url, detail_url, file_path):
@@ -477,6 +400,14 @@ async def download_data(session, data_item):
         # 다운로드 버튼 확인
         if not data_item.get('has_download_btn', False):
             return False, data_item['title'], "다운로드 버튼 없음"
+        
+        # 제목 필터링 (전북, 전라북도, 전북특별자치도 중 하나 포함 확인)
+        title = data_item.get('title', '')
+        full_title = data_item.get('full_title', '')
+        title_keywords = ['전북', '전라북도', '전북특별자치도']
+        
+        if not any(kw in title for kw in title_keywords) and not any(kw in full_title for kw in title_keywords):
+            return False, title, "제목에 필요한 키워드가 포함되지 않음"
             
         # detail_url은 리퍼러로 사용하기 위해 보존
         detail_url = data_item.get('detail_url')
@@ -485,8 +416,11 @@ async def download_data(session, data_item):
         
         # 파일명 설정 및 경로 생성
         filename = f"{data_item['title']}.{data_item['file_ext']}"
-        filename = re.sub(r'[\\/*?:"<>|]', '_', filename)  # 파일명에 금지된 문자 제거
-        filename = filename.replace(',', '_')  # 쉼표를 언더스코어로 대체
+        # 파일명에 금지된 문자 제거 (Windows 파일명으로 사용할 수 없는 문자들)
+        filename = re.sub(r'[\\/*?:"<>|,]', '_', filename)  # 쉼표도 포함하여 제거
+        # 연속된 언더스코어 제거 및 공백 정리
+        filename = re.sub(r'_+', '_', filename)  # 연속된 언더스코어를 하나로
+        filename = re.sub(r'\s+', ' ', filename)  # 연속된 공백을 하나로
         file_path = os.path.join(DOWNLOAD_DIR, filename)
         
         # 1. 파일 다운로드 정보 URL
@@ -613,33 +547,49 @@ def filter_data_items(items, keywords=None, formats=None, providers=None):
     """데이터 항목을 필터링하는 함수"""
     filtered_items = []
     
-    # 제목에서 검색할 키워드들
+    # 제목에서 검색할 키워드들 (이 키워드 중 하나라도 포함되어야 함)
     title_keywords = ['전북', '전라북도', '전북특별자치도']
     
     for item in items:
         # 제목 필터링 - 제목에 주요 키워드('전북', '전라북도', '전북특별자치도')가 포함되어 있는지 확인
         if 'title' in item:
             item_title = item['title'].lower()
-            if not any(kw.lower() in item_title for kw in title_keywords):
+            item_full_title = item.get('full_title', '').lower()
+            
+            # 제목이나 전체 제목에 키워드가 포함되어 있는지 확인
+            if not any(kw.lower() in item_title for kw in title_keywords) and \
+               not any(kw.lower() in item_full_title for kw in title_keywords):
+                logging.debug(f"제목 필터링: '{item['title']}' - 키워드를 포함하지 않아 제외")
                 continue
+        else:
+            # 제목 정보가 없는 항목은 제외
+            continue
         
-        # 키워드 필터링
-        if keywords and 'keywords' in item:
+        # 키워드 필터링 (주어진 경우)
+        if keywords and 'keywords' in item and item['keywords']:
             item_keywords = ' '.join(item['keywords']).lower()
             if not any(kw.lower() in item_keywords for kw in keywords):
+                logging.debug(f"키워드 필터링: '{item['title']}' - 지정된 키워드를 포함하지 않아 제외")
                 continue
         
-        # 형식 필터링
-        if formats and 'format_types' in item:
+        # 형식 필터링 (주어진 경우)
+        if formats and 'format_types' in item and item['format_types']:
             item_formats = [f.upper() for f in item['format_types']]
             if not any(fmt.upper() in item_formats for fmt in formats):
+                logging.debug(f"형식 필터링: '{item['title']}' - 지정된 형식이 아니라 제외")
                 continue
         
-        # 제공기관 필터링
-        if providers and 'provider' in item:
-            provider = item['provider'].lower() if item['provider'] else ''
+        # 제공기관 필터링 (주어진 경우)
+        if providers and 'provider' in item and item['provider']:
+            provider = item['provider'].lower()
             if not any(prov.lower() in provider for prov in providers):
+                logging.debug(f"제공기관 필터링: '{item['title']}' - 지정된 제공기관이 아니라 제외")
                 continue
+        
+        # 다운로드 버튼 확인 (다운로드 버튼이 없는 항목은 명시적으로 표시)
+        if 'has_download_btn' in item and not item['has_download_btn']:
+            item['_note'] = "다운로드 버튼 없음"
+            logging.debug(f"다운로드 버튼 없음: '{item['title']}' - 다운로드 불가능")
         
         filtered_items.append(item)
     
@@ -679,6 +629,9 @@ def parse_arguments():
     
     parser.add_argument('--item-ids', nargs='+', type=int, 
                         help='다운로드할 항목의 인덱스 목록 (1부터 시작, 다운로드 모드에서 사용)')
+    
+    parser.add_argument('--debug', action='store_true',
+                        help='디버그 모드 활성화 (상세 로그 출력)')
     
     return parser.parse_args()
 
@@ -797,11 +750,10 @@ async def download_items(session, items, args):
     for idx, item in enumerate(download_items):
         # 진행률 표시
         title = item.get('title', '')
-        print_progress(idx, len(download_items), title)
+        print_progress(idx+1, len(download_items), title)
         
         # 다운로드 버튼이 없는 항목은 건너뛰기
         if not item.get('has_download_btn', True):
-            print_progress(idx+1, len(download_items), f"{title} (다운로드 버튼 없음)", success=None)
             logging.debug(f"다운로드 버튼 없음: {title} - 건너뜁니다")
             skipped_count += 1
             continue
@@ -823,8 +775,12 @@ async def download_items(session, items, args):
         await asyncio.sleep(random.uniform(1.0, 2.0))
     
     print("\n" + "="*70)
-    print(f"다운로드 결과: 성공 {downloaded_count}개, 실패 {failed_count}개, 건너뜀 {skipped_count}개")
-    print(f"다운로드 파일 저장 위치: '{args.download_dir}' 디렉토리")
+    print(f"다운로드 결과 요약")
+    print("-"*70)
+    print(f"- 성공: {downloaded_count}개")
+    print(f"- 실패: {failed_count}개 (상세 내용: {FAILED_LIST_FILE})")
+    print(f"- 건너뜀: {skipped_count}개 (다운로드 버튼 없음)")
+    print(f"- 저장 위치: '{args.download_dir}' 디렉토리")
     print("="*70)
     
     logging.info(f"다운로드 완료. 총 {downloaded_count}개 성공, {failed_count}개 실패, {skipped_count}개 건너뜀.")
@@ -842,6 +798,13 @@ async def main():
     # 설정 변수 업데이트
     global DOWNLOAD_DIR
     DOWNLOAD_DIR = args.download_dir
+    
+    # 로깅 레벨 설정 (디버그 모드 지원)
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        logging.debug("디버그 모드가 활성화되었습니다.")
+    else:
+        logger.setLevel(logging.INFO)
     
     async with await create_session() as session:
         if args.mode in ['collect', 'all']:

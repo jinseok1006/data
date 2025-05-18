@@ -184,3 +184,7 @@ cython_debug/
 downloaded_data/
 .cursorrules.old
 data_titles.json
+
+
+.cursorrules
+failed_data_titles.json
