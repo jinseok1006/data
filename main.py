@@ -13,6 +13,34 @@ from urllib.parse import urljoin, urlparse, parse_qs, quote_plus
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# 진행률 표시용 변수 및 함수
+PROGRESS_BAR_WIDTH = 50  # 진행률 바 너비
+
+def print_progress(current, total, title='', success=None):
+    """진행률을 시각적으로 표시하는 함수"""
+    percent = int(100 * current / total)
+    filled_width = int(PROGRESS_BAR_WIDTH * current / total)
+    bar = '■' * filled_width + '□' * (PROGRESS_BAR_WIDTH - filled_width)
+    
+    status = ""
+    if success is not None:
+        status = "✓ 성공" if success else "✗ 실패"
+    
+    if title:
+        title_display = f" - {title}"
+        # 타이틀이 너무 길면 자르기
+        if len(title_display) > 30:
+            title_display = title_display[:27] + "..."
+    else:
+        title_display = ""
+    
+    progress_text = f"\r진행률: [{bar}] {percent}% ({current}/{total}){title_display} {status}"
+    print(progress_text, end='', flush=True)
+    
+    # 완료되면 줄바꿈
+    if current == total:
+        print()
+
 # 기본 URL 및 경로 설정
 BASE_URL = "https://www.data.go.kr"
 LIST_URL = "https://www.data.go.kr/tcs/dss/selectDataSetList.do"
@@ -92,14 +120,28 @@ def parse_data_item(item):
         # 제목 텍스트 추출
         full_title = title_element.get_text(strip=True)
         
-        # 파일 형식 정보(CSV, JSON, XML 등)를 제거
-        title_text = full_title
-        format_types = ['CSV', 'JSON', 'XML', 'XLSX', 'XLS', 'PDF', 'HWP', 'JPG']
-        for format_type in format_types:
-            title_text = title_text.replace(format_type, '')
+        # 페이지네이션에서 보이는 포맷 태그 추출 - 이 부분이 중요합니다!
+        format_tag = None
+        format_tag_elem = title_element.select_one('span.data-format')
+        if format_tag_elem:
+            format_tag = format_tag_elem.get_text(strip=True)
+            
+        # 페이지네이션에서 직접 파일 형식 확인
+        if format_tag:
+            logging.debug(f"페이지네이션에서 발견한 형식 태그: {format_tag}")
         
-        # '+' 기호와 앞뒤 공백 제거
-        title_text = title_text.replace('+', '').strip()
+        # 제목에서 파일 형식 제거 후 제목 정리
+        title_text = full_title
+        format_types = ['CSV', 'JSON', 'XML', 'XLSX', 'XLS', 'PDF', 'HWP', 'JPG', 'ZIP']
+        for fmt in format_types:
+            if fmt in title_text:
+                title_text = title_text.replace(fmt, '')
+        
+        # 제목 정리 - 특수문자 및 불필요한 공백 제거
+        title_text = title_text.replace('+', '')  # '+' 기호 제거
+        title_text = title_text.strip(',')  # 앞뒤 쉼표 제거
+        title_text = re.sub(r'\s+', ' ', title_text)  # 연속된 공백을 하나로
+        title_text = title_text.strip()  # 앞뒤 공백 제거
         
         # 상세 페이지 URL 추출
         detail_url = None
@@ -117,24 +159,36 @@ def parse_data_item(item):
         format_spans = item.select('dl dt a span.data-format, dl dt span.data-format')
         format_types = [span.get_text(strip=True) for span in format_spans if span.get_text(strip=True)]
         
-        # 기본 파일 형식 설정
+        # 기본 파일 형식 설정 (페이지 형식 태그 > 데이터 형식 정보 > 기본값)
         file_ext = 'csv'  # 기본값
-        if format_types:
-            ext_map = {
-                'CSV': 'csv', 
-                'XLSX': 'xlsx', 
-                'XLS': 'xls',
-                'JSON': 'json', 
-                'XML': 'xml', 
-                'HWP': 'hwp',
-                'JPG': 'jpg', 
-                'PDF': 'pdf'
-            }
-            
+        ext_map = {
+            'CSV': 'csv', 
+            'XLSX': 'xlsx', 
+            'XLS': 'xls',
+            'JSON': 'json', 
+            'XML': 'xml', 
+            'HWP': 'hwp',
+            'JPG': 'jpg', 
+            'PNG': 'png',
+            'GIF': 'gif',
+            'ZIP': 'zip',
+            'PDF': 'pdf'
+        }
+        
+        # 파일 형식 결정 로직 (우선순위) - 명확한 확장자만 사용
+        # 1. 페이지네이션에서 보이는 포맷 태그
+        if format_tag and format_tag.upper() in ext_map:
+            file_ext = ext_map[format_tag.upper()]
+        # 2. 데이터 형식 정보
+        elif format_types:
             for fmt in format_types:
-                if fmt in ext_map:
-                    file_ext = ext_map[fmt]
+                if fmt.upper() in ext_map:
+                    file_ext = ext_map[fmt.upper()]
                     break
+        
+        # 매체유형 추출 - 페이지네이션에서 직접 추출
+        media_type_elem = item.select_one('p:contains("매체유형") > span')
+        media_type = media_type_elem.get_text(strip=True) if media_type_elem else None
         
         # 카테고리 정보 추출
         category_elem = item.select_one('p > span:first-child')
@@ -172,18 +226,26 @@ def parse_data_item(item):
         download_count_elem = item.select_one('p:contains("다운로드") > span')
         download_count = download_count_elem.get_text(strip=True) if download_count_elem else None
         
-        # 다운로드 버튼 찾기
-        download_btn = item.select_one('a:contains("다운로드")')
+        # 다운로드 버튼 찾기 - 여러 가능한 선택자 검사
+        download_btn = item.select_one('a:contains("다운로드"), a.download-btn, a.btn-download, a[onclick*="download"]')
         has_download_btn = bool(download_btn)
         
+        # 다운로드 버튼이 없는 경우 추가 확인
+        if not has_download_btn:
+            # 화면에 표시되는 "다운로드" 텍스트가 있는지 확인
+            text_elements = [elem for elem in item.select('*') if '다운로드' in elem.get_text(strip=True)]
+            has_download_btn = len(text_elements) > 0
+        
         # 데이터 항목 정보 수집
-        return {
+        data_item = {
             'title': title_text,
             'full_title': full_title,
             'detail_url': detail_url,
             'data_id': data_id,
             'file_ext': file_ext,
             'format_types': format_types,
+            'format_tag': format_tag,  # 페이지네이션에서 직접 추출한 포맷 태그
+            'media_type': media_type,  # 매체유형 정보 추가
             'category': category,
             'provider': provider,
             'keywords': keywords,
@@ -193,6 +255,8 @@ def parse_data_item(item):
             'download_count': download_count,
             'has_download_btn': has_download_btn
         }
+        
+        return data_item
     except Exception as e:
         logging.error(f"데이터 항목 추출 오류: {e}")
         return None
@@ -257,6 +321,38 @@ async def get_data_detail(session, data_item):
                 provider_elem = meta_table.select_one('th:contains("제공기관") + td')
                 if provider_elem:
                     data_item['provider'] = provider_elem.get_text(strip=True)
+                
+                # 확장자 정보 추출 - 중요!
+                extension_elem = meta_table.select_one('th:contains("확장자") + td')
+                if extension_elem:
+                    ext = extension_elem.get_text(strip=True)
+                    if ext:
+                        ext_map = {
+                            'CSV': 'csv', 
+                            'XLSX': 'xlsx', 
+                            'XLS': 'xls',
+                            'JSON': 'json', 
+                            'XML': 'xml', 
+                            'HWP': 'hwp',
+                            'JPG': 'jpg', 
+                            'PNG': 'png',
+                            'GIF': 'gif',
+                            'ZIP': 'zip',
+                            'PDF': 'pdf'
+                        }
+                        ext_upper = ext.upper()
+                        if ext_upper in ext_map:
+                            data_item['file_ext'] = ext_map[ext_upper]
+                        else:
+                            data_item['file_ext'] = ext.lower()
+                
+                # 매체유형 정보 추출 (이미지, 텍스트 등)
+                media_type_elem = meta_table.select_one('th:contains("매체유형") + td')
+                if media_type_elem:
+                    media_type = media_type_elem.get_text(strip=True)
+                    # 매체 유형이 이미지이면서 확장자가 없거나 csv인 경우 JPG로 설정
+                    if media_type in ['이미지', '사진'] and data_item['file_ext'] == 'csv':
+                        data_item['file_ext'] = 'jpg'
             
             # 미리보기 테이블의 첫 행에서 컬럼 정보 추출
             preview_table = soup.select_one('div.data-meta-preview table')
@@ -314,33 +410,51 @@ async def download_file(session, download_url, detail_url, file_path):
     """실제 파일을 다운로드하는 함수"""
     try:
         async with session.get(download_url, headers={
-            "Referer": detail_url
+            "Referer": detail_url,
+            "Accept": "*/*"
         }) as download_response:
             status = download_response.status
-            logging.info(f"다운로드 응답 상태: {status}")
+            logging.debug(f"다운로드 응답 상태: {status}")
             
             if status != 200:
                 return False, f"다운로드 실패: HTTP 에러 {status}"
             
-            # Content-Type 확인
+            # Content-Type 및 Content-Disposition 확인
             content_type = download_response.headers.get('Content-Type', '')
             content_disp = download_response.headers.get('Content-Disposition', '')
             
+            logging.debug(f"응답 Content-Type: {content_type}")
+            logging.debug(f"응답 Content-Disposition: {content_disp}")
+            
             # 파일 데이터 가져오기
             file_data = await download_response.read()
-            logging.info(f"수신된 데이터 크기: {len(file_data)} 바이트")
+            logging.debug(f"수신된 데이터 크기: {len(file_data)} 바이트")
             
-            # 파일이 HTML이면 오류
-            if b"<!DOCTYPE html>" in file_data[:100]:
-                logging.error("HTML 응답이 반환됨. 예상되는 파일 형식이 아님")
-                return False, "다운로드 실패: HTML 페이지가 반환됨"
+            # HTML 응답 검사 (에러 또는 리다이렉트 페이지)
+            is_html = False
+            if content_type and ('text/html' in content_type or 'application/xhtml' in content_type):
+                is_html = True
+            elif len(file_data) > 10 and (file_data[:10].lower().find(b'<!doctype') != -1 or file_data[:10].lower().find(b'<html') != -1):
+                is_html = True
+            
+            if is_html:
+                # HTML 응답 내용 확인하여 오류 메시지 추출 시도
+                try:
+                    html_text = file_data.decode('utf-8', errors='ignore')
+                    soup = BeautifulSoup(html_text, 'html.parser')
+                    error_msg = soup.get_text()[:200]  # 첫 200자만 추출
+                    logging.error(f"HTML 응답 수신: {error_msg}...")
+                    return False, "다운로드 실패: HTML 페이지가 반환됨"
+                except:
+                    logging.error("HTML 응답이 반환됨. 예상되는 파일 형식이 아님")
+                    return False, "다운로드 실패: HTML 페이지가 반환됨"
             
             # 파일 저장
             with open(file_path, 'wb') as f:
                 f.write(file_data)
             
             size = os.path.getsize(file_path)
-            logging.info(f"파일 다운로드 완료: {os.path.basename(file_path)} ({size} 바이트)")
+            logging.debug(f"파일 다운로드 완료: {os.path.basename(file_path)} ({size} 바이트)")
             
             if size == 0:
                 logging.error("다운로드된 파일이 비어 있습니다.")
@@ -360,6 +474,10 @@ async def download_data(session, data_item):
         if not data_id:
             return False, data_item['title'], "데이터 ID 없음"
         
+        # 다운로드 버튼 확인
+        if not data_item.get('has_download_btn', False):
+            return False, data_item['title'], "다운로드 버튼 없음"
+            
         # detail_url은 리퍼러로 사용하기 위해 보존
         detail_url = data_item.get('detail_url')
         if not detail_url:
@@ -368,51 +486,73 @@ async def download_data(session, data_item):
         # 파일명 설정 및 경로 생성
         filename = f"{data_item['title']}.{data_item['file_ext']}"
         filename = re.sub(r'[\\/*?:"<>|]', '_', filename)  # 파일명에 금지된 문자 제거
+        filename = filename.replace(',', '_')  # 쉼표를 언더스코어로 대체
         file_path = os.path.join(DOWNLOAD_DIR, filename)
         
-        # 실제 다운로드에 사용할 URL 구성
-        # 1. 우선 메타 정보 URL 확인 (첫 단계) - 파일 ID 얻기용
+        # 1. 파일 다운로드 정보 URL
         file_info_url = f"https://www.data.go.kr/tcs/dss/selectFileDataDownload.do?publicDataPk={data_id}&fileDetailSn=1"
-        logging.info(f"파일 메타정보 URL: {file_info_url}")
+        logging.debug(f"파일 메타정보 URL: {file_info_url}")
         
         # 2. 파일 ID 가져오기
         atch_file_id = None
+        file_detail_sn = "1"  # 기본값
+        
         try:
             async with session.get(file_info_url, headers={
                 "Referer": detail_url,
-                "Accept": "application/json"
+                "Accept": "application/json, text/plain, */*"
             }) as info_response:
-                # JSON 응답인 경우 처리
-                try:
-                    info_json = await info_response.json()
-                    if 'fileDataRegistVO' in info_json and info_json['fileDataRegistVO']:
-                        atch_file_id = info_json['fileDataRegistVO'].get('atchFileId')
-                    elif 'atchFileId' in info_json:
-                        atch_file_id = info_json['atchFileId']
-                except:
-                    logging.warning("JSON 파싱 실패, HTML 응답 확인")
-                    html_content = await info_response.text()
-                    # HTML에서 필요한 정보를 추출할 수 있다면 여기서 처리
+                if info_response.status != 200:
+                    logging.warning(f"메타 정보 요청 실패: HTTP {info_response.status}")
+                else:
+                    content_type = info_response.headers.get('Content-Type', '')
+                    
+                    # JSON 응답인 경우
+                    if 'application/json' in content_type:
+                        try:
+                            info_json = await info_response.json()
+                            logging.debug(f"메타 정보 응답: {info_json}")
+                            
+                            if 'fileDataRegistVO' in info_json and info_json['fileDataRegistVO']:
+                                atch_file_id = info_json['fileDataRegistVO'].get('atchFileId')
+                                file_detail_sn = str(info_json['fileDataRegistVO'].get('fileDetailSn', "1"))
+                            elif 'atchFileId' in info_json:
+                                atch_file_id = info_json['atchFileId']
+                                file_detail_sn = str(info_json.get('fileDetailSn', "1"))
+                        except json.JSONDecodeError:
+                            logging.warning("JSON 파싱 실패")
+                    else:
+                        # HTML 또는 다른 형식의 응답
+                        html_content = await info_response.text()
+                        logging.debug(f"비JSON 응답: {html_content[:200]}...")
         except Exception as e:
             logging.error(f"메타 정보 요청 중 오류: {str(e)}")
         
         # 파일 ID가 없으면 기본 형식으로 구성
         if not atch_file_id:
             # FILE_000000000{data_id} 형식으로 생성 (전체 길이 20자리)
-            file_id_prefix = "FILE_000000000"
-            pad_length = 20 - len(file_id_prefix)
-            padded_data_id = data_id.zfill(pad_length)
-            atch_file_id = file_id_prefix + padded_data_id[-pad_length:]
-            logging.info(f"자동 구성된 파일 ID: {atch_file_id}")
+            atch_file_id = f"FILE_{data_id.zfill(15)}"
+            # 길이 조정 (최대 20자)
+            atch_file_id = atch_file_id[-20:]
+            logging.debug(f"자동 구성된 파일 ID: {atch_file_id}")
         else:
-            logging.info(f"API에서 획득한 파일 ID: {atch_file_id}")
+            logging.debug(f"API에서 획득한 파일 ID: {atch_file_id}, 파일 상세 일련번호: {file_detail_sn}")
         
-        # 3. 실제 다운로드 URL 생성
-        download_url = f"https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId={atch_file_id}&fileDetailSn=1"
-        logging.info(f"다운로드 URL: {download_url}")
+        # 3. 실제 다운로드 URL 생성 및 다운로드 시도
+        download_url = f"https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId={atch_file_id}&fileDetailSn={file_detail_sn}"
+        logging.debug(f"다운로드 URL: {download_url}")
         
         # 4. 파일 다운로드
         success, result = await download_file(session, download_url, detail_url, file_path)
+        
+        # 첫 번째 시도가 실패하고 file_detail_sn이 "1"이면 다른 값으로 재시도
+        if not success and file_detail_sn == "1":
+            for retry_sn in ["0", "2", "3"]:
+                logging.debug(f"첫 번째 다운로드 실패, fileDetailSn={retry_sn}로 재시도합니다.")
+                retry_url = f"https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId={atch_file_id}&fileDetailSn={retry_sn}"
+                success, result = await download_file(session, retry_url, detail_url, file_path)
+                if success:
+                    break
         
         if not success:
             return False, data_item['title'], result
@@ -442,7 +582,7 @@ def convert_encoding(file_path, from_encoding='euc-kr', to_encoding='utf-8'):
             with open(file_path, 'w', encoding=to_encoding) as f:
                 f.write(decoded_content)
             
-            logging.info(f"파일 인코딩 변환 성공: {file_path} ({from_encoding} -> {to_encoding})")
+            logging.debug(f"파일 인코딩 변환 성공: {file_path} ({from_encoding} -> {to_encoding})")
             return True
         except UnicodeDecodeError:
             # 다른 인코딩 시도
@@ -453,7 +593,7 @@ def convert_encoding(file_path, from_encoding='euc-kr', to_encoding='utf-8'):
                 with open(file_path, 'w', encoding=to_encoding) as f:
                     f.write(decoded_content)
                 
-                logging.info(f"파일 인코딩 변환 성공: {file_path} (cp949 -> {to_encoding})")
+                logging.debug(f"파일 인코딩 변환 성공: {file_path} (cp949 -> {to_encoding})")
                 return True
             except UnicodeDecodeError:
                 logging.warning(f"인코딩 변환 실패: {file_path}. 파일이 예상된 인코딩이 아닙니다.")
@@ -544,7 +684,7 @@ def parse_arguments():
 
 # 데이터 수집 함수
 async def collect_data(session, args):
-    """페이지네이션 화면에서 데이터를 수집하는 함수"""
+    """페이지네이션 화면에서만 데이터를 수집하는 함수 (세부 페이지 접근 없음)"""
     # 검색 파라미터 설정
     params = {
         "dType": "FILE",
@@ -567,12 +707,18 @@ async def collect_data(session, args):
     # 모든 페이지 순회하며 데이터 수집
     all_items = []
     
+    print("\n" + "="*70)
+    print(f"데이터 수집 시작: 총 {max_pages}개 페이지 탐색")
+    print("="*70)
+    
     for page_num in range(1, max_pages + 1):
-        logging.info(f"페이지 {page_num}/{max_pages} 처리 중...")
+        # 진행률 표시
+        print_progress(page_num, max_pages, f"페이지 {page_num}")
+        
         data_items = await extract_page_data(session, page_num, params)
         
         if data_items:
-            logging.info(f"페이지 {page_num}에서 {len(data_items)}개 항목 발견")
+            logging.debug(f"페이지 {page_num}에서 {len(data_items)}개 항목 발견")
             all_items.extend(data_items)
         else:
             logging.warning(f"페이지 {page_num}에서 데이터를 찾을 수 없습니다.")
@@ -580,9 +726,13 @@ async def collect_data(session, args):
         # 과도한 요청 방지를 위한 딜레이
         await asyncio.sleep(random.uniform(0.5, 1.0))
     
+    print("\n")  # 진행률 표시 후 줄바꿈
+    
     if not all_items:
         logging.error("검색 결과가 없습니다.")
         return []
+    
+    logging.info(f"총 {len(all_items)}개 항목을 수집했습니다.")
     
     # 필터링
     filtered_items = filter_data_items(
@@ -595,6 +745,8 @@ async def collect_data(session, args):
     if not filtered_items:
         logging.warning("필터링 후 남은 항목이 없습니다.")
         return []
+    
+    logging.info(f"필터링 후 {len(filtered_items)}개 항목이 남았습니다.")
     
     # 항상 JSON 파일로 메타데이터 저장 (다운로드 모드에서 사용)
     json_file = "data_titles.json"
@@ -633,37 +785,53 @@ async def download_items(session, items, args):
         logging.warning("다운로드할 항목이 없습니다.")
         return
     
-    logging.info(f"선택된 {len(download_items)}개 항목 다운로드를 시작합니다.")
+    logging.info(f"총 {len(download_items)}개 항목 다운로드를 시작합니다.")
+    print("\n" + "="*70)
+    print(f"다운로드 시작: 총 {len(download_items)}개 항목")
+    print("="*70)
     
     downloaded_count = 0
     skipped_count = 0
+    failed_count = 0
     
     for idx, item in enumerate(download_items):
+        # 진행률 표시
+        title = item.get('title', '')
+        print_progress(idx, len(download_items), title)
+        
         # 다운로드 버튼이 없는 항목은 건너뛰기
         if not item.get('has_download_btn', True):
-            logging.info(f"다운로드 버튼 없음 ({idx+1}/{len(download_items)}): {item['title']} - 건너뜁니다")
+            print_progress(idx+1, len(download_items), f"{title} (다운로드 버튼 없음)", success=None)
+            logging.debug(f"다운로드 버튼 없음: {title} - 건너뜁니다")
             skipped_count += 1
             continue
-            
-        logging.info(f"다운로드 중 ({idx+1}/{len(download_items)}): {item['title']}")
+        
+        # 다운로드 시도
         success, title, result = await download_data(session, item)
         
         if success:
-            logging.info(f"다운로드 성공: {result}")
+            print_progress(idx+1, len(download_items), title, success=True)
+            logging.debug(f"다운로드 성공: {result}")
             downloaded_count += 1
         else:
+            print_progress(idx+1, len(download_items), title, success=False)
             logging.error(f"다운로드 실패: {result}")
             await record_failed_download(title, result)
+            failed_count += 1
         
         # 과도한 요청 방지를 위한 딜레이
         await asyncio.sleep(random.uniform(1.0, 2.0))
     
-    logging.info(f"다운로드 완료. 총 {downloaded_count}개 성공, {skipped_count}개 건너뜀. 결과는 '{args.download_dir}' 디렉토리에 저장되었습니다.")
+    print("\n" + "="*70)
+    print(f"다운로드 결과: 성공 {downloaded_count}개, 실패 {failed_count}개, 건너뜀 {skipped_count}개")
+    print(f"다운로드 파일 저장 위치: '{args.download_dir}' 디렉토리")
+    print("="*70)
+    
+    logging.info(f"다운로드 완료. 총 {downloaded_count}개 성공, {failed_count}개 실패, {skipped_count}개 건너뜀.")
     
     # 인코딩 관련 안내
     if any(item.get('file_ext', '').lower() in ['csv'] for item in download_items):
-        logging.info("CSV 파일은 자동으로 EUC-KR/CP949 인코딩에서 UTF-8로 변환을 시도했습니다.")
-        logging.info("한글이 깨져 보인다면 Excel에서 열 때 적절한 인코딩을 선택하세요.")
+        print("* CSV 파일은 자동으로 EUC-KR/CP949 인코딩에서 UTF-8로 변환을 시도했습니다.")
 
 # 메인 함수
 async def main():
