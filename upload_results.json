@@ -1,0 +1,18 @@
+{
+  "timestamp": "2025-05-18 17:32:57",
+  "total_attempts": 1,
+  "success_count": 0,
+  "failed_count": 1,
+  "filtered_zip_count": 0,
+  "format_mismatch_count": 0,
+  "success_items": [],
+  "failed_items": [
+    {
+      "data_id": "3042240",
+      "title": "CSVJSON + XML전북특별자치도_임상별 임목축적",
+      "reason": "Cannot connect to host localhost:11311 ssl:default [원격 컴퓨터가 네트워크 연결을 거부했습니다]"
+    }
+  ],
+  "filtered_zip_items": [],
+  "format_mismatch_items": []
+}

@@ -1,0 +1,22 @@
+{
+  "title": "CSVJSON + XML전북특별자치도_임상별 임목축적",
+  "data_id": "3042240",
+  "provider": "전북특별자치도",
+  "file_data_name": "전북특별자치도_임상별 임목축적_20111231",
+  "category": "일반공공행정 - 정부자원관리",
+  "extension": "CSV",
+  "update_cycle": "수시 (1회성 데이터)",
+  "register_date": "2019-09-25",
+  "update_date": "2024-01-30",
+  "keywords": [
+    "활엽수림",
+    "침엽수림",
+    "기본통계"
+  ],
+  "description": "전북특별자치도 임상별 임목축적관련 통계 데이터입니다.(시군별 침엽수림, 활엽수림, 혼효림 등)전북특별자치도 시군별 침엽수림(입목지) 개수",
+  "provision_type": "공공데이터포털에서 다운로드(원문파일등록)",
+  "license": "이용허락범위 제한 없음",
+  "department": "디지털산업과",
+  "contact_phone": "",
+  "upload_timestamp": "2025-05-18 17:32:54"
+}

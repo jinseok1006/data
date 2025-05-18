@@ -1,0 +1,11 @@
+기업 현황: 제목에 필요한 키워드가 포함되지 않음
+사회복지 현황: 제목에 필요한 키워드가 포함되지 않음
+CSVJSON + XML전북특별자치도_임상별 임목축적: 다운로드 실패: 파일이 비어 있습니다.
+CSVJSON + XML전북특별자치도_여성폭력상담: 다운로드 실패: 파일이 비어 있습니다.
+CSVJSON + XML전북특별자치도_제조업체 현황: 다운로드 실패: 파일이 비어 있습니다.
+CSVJSON + XML전라북도_수질검사 현황: 다운로드 실패: 파일이 비어 있습니다.
+CSVJSON + XML전북특별자치도_임상별 임목축적: [WinError 183] 파일이 이미 있으므로 만들 수 없습니다: 'downloaded_data\\3042240\\data_temp.csv' -> 'downloaded_data\\3042240\\data.csv'
+CSVJSON + XML전북특별자치도_여성폭력상담: [WinError 183] 파일이 이미 있으므로 만들 수 없습니다: 'downloaded_data\\3042805\\data_temp.csv' -> 'downloaded_data\\3042805\\data.csv'
+CSVJSON + XML전북특별자치도_제조업체 현황: [WinError 183] 파일이 이미 있으므로 만들 수 없습니다: 'downloaded_data\\15010992\\data_temp.csv' -> 'downloaded_data\\15010992\\data.csv'
+CSVJSON + XML한국교통안전공단_전라북도최다 이용 정류장: [WinError 183] 파일이 이미 있으므로 만들 수 없습니다: 'downloaded_data\\15074196\\data_temp.csv' -> 'downloaded_data\\15074196\\data.csv'
+CSVJSON + XML전라북도_수질검사 현황: [WinError 183] 파일이 이미 있으므로 만들 수 없습니다: 'downloaded_data\\3081325\\data_temp.csv' -> 'downloaded_data\\3081325\\data.csv'

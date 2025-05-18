@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-05-18 17:32:14",
+  "total_attempts": 1,
+  "success_count": 1,
+  "failed_count": 0,
+  "skipped_count": 0,
+  "success_items": [
+    {
+      "data_id": "3042240",
+      "title": "CSVJSON + XML전북특별자치도_임상별 임목축적",
+      "dir_path": "downloaded_data\\3042240"
+    }
+  ],
+  "failed_items": [],
+  "skipped_items": []
+}

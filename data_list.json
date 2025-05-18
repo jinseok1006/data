@@ -1,0 +1,108 @@
+[
+  {
+    "title": "임상별 임목축적 데이터셋",
+    "detail_url": "https://www.data.go.kr/data/3042240/fileData.do",
+    "data_id": "3042240",
+    "format_types": [
+      "CSV",
+      "JSON + XML"
+    ],
+    "provider": "전북특별자치도",
+    "has_download_btn": true
+  },
+  {
+    "title": "CSVJSON + XML전북특별자치도_여성폭력상담",
+    "detail_url": "https://www.data.go.kr/data/3042805/fileData.do",
+    "data_id": "3042805",
+    "format_types": [
+      "CSV",
+      "JSON + XML"
+    ],
+    "provider": "전북특별자치도",
+    "has_download_btn": true
+  },
+  {
+    "title": "CSVJSON + XML전북특별자치도_제조업체 현황",
+    "detail_url": "https://www.data.go.kr/data/15010992/fileData.do",
+    "data_id": "15010992",
+    "format_types": [
+      "CSV",
+      "JSON + XML"
+    ],
+    "provider": "전북특별자치도",
+    "has_download_btn": true
+  },
+  {
+    "title": "CSV,XLSX전라북도순창군_물가정보",
+    "detail_url": "https://www.data.go.kr/data/3078785/fileData.do",
+    "data_id": "3078785",
+    "format_types": [
+      "CSV,XLSX"
+    ],
+    "provider": "전북특별자치도 순창군",
+    "has_download_btn": false
+  },
+  {
+    "title": "CSV,XLSX전라북도순창군_인구통계",
+    "detail_url": "https://www.data.go.kr/data/3078778/fileData.do",
+    "data_id": "3078778",
+    "format_types": [
+      "CSV,XLSX"
+    ],
+    "provider": "전북특별자치도 순창군",
+    "has_download_btn": false
+  },
+  {
+    "title": "JPG전북특별자치도 전주시_음식점 사진",
+    "detail_url": "https://www.data.go.kr/data/15076758/fileData.do",
+    "data_id": "15076758",
+    "format_types": [
+      "JPG"
+    ],
+    "provider": "전북특별자치도 전주시",
+    "has_download_btn": true
+  },
+  {
+    "title": "CSVJSON + XML전라북도_수질검사 현황",
+    "detail_url": "https://www.data.go.kr/data/3081325/fileData.do",
+    "data_id": "3081325",
+    "format_types": [
+      "CSV",
+      "JSON + XML"
+    ],
+    "provider": "전북특별자치도",
+    "has_download_btn": true
+  },
+  {
+    "title": "CSVJSON + XML전라북도교육청_전라북도전주교육지원청_전주시 초등학교 현황",
+    "detail_url": "https://www.data.go.kr/data/15041067/fileData.do",
+    "data_id": "15041067",
+    "format_types": [
+      "CSV",
+      "JSON + XML"
+    ],
+    "provider": "전라북도교육청 전라북도전주교육지원청",
+    "has_download_btn": true
+  },
+  {
+    "title": "CSVJSON + XML전북특별자치도_병원현황",
+    "detail_url": "https://www.data.go.kr/data/3081362/fileData.do",
+    "data_id": "3081362",
+    "format_types": [
+      "CSV",
+      "JSON + XML"
+    ],
+    "provider": "전북특별자치도",
+    "has_download_btn": true
+  },
+  {
+    "title": "XLSX전북특별자치도 완주군_통계연보",
+    "detail_url": "https://www.data.go.kr/data/3076558/fileData.do",
+    "data_id": "3076558",
+    "format_types": [
+      "XLSX"
+    ],
+    "provider": "전북특별자치도 완주군",
+    "has_download_btn": true
+  }
+]
