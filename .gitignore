@@ -189,3 +189,9 @@ data_titles.json
 .cursorrules
 failed_data_titles.json
 etc 
+
+data_list.json
+data_detail.json
+
+upload_info/
+upload_results.json
